@@ -76,7 +76,7 @@ A Model Context Protocol (MCP) server designed to help small businesses organize
 
 1. Start the MCP server:
    ```bash
-   python -m small_business_mcp.server
+   python -m MCPServer.server
    ```
 
 2. Connect using an MCP client:
@@ -108,7 +108,7 @@ A Model Context Protocol (MCP) server designed to help small businesses organize
 
 ## Security
 
-- All database credentials are managed through environment variables
+- All database credentials and API keys are managed through environment variables
 - File access is restricted to specified directories
 - Data encryption for sensitive information
 - Regular backup procedures
