@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 import os
 from pathlib import Path
 from datetime import datetime
+import json
 
 from ..config.database import get_db
 from ..models.database import Document, Category, DocumentVersion, ChatHistory, BusinessData
@@ -17,6 +18,162 @@ from ..utils.file_processor import (
 # Create MCP server instance
 mcp = FastMCP("Small Business Data Manager")
 
+# ===== Resource implementations =====
+@mcp.resource("schema://database")
+async def get_database_schema(ctx: Context) -> str:
+    """Provide the database schema as a resource for context"""
+    db: Session = next(get_db())
+    try:
+        # Get table information from database
+        # This is a simplified example - real implementation would query metadata
+        schema = {
+            "Document": {
+                "id": "Integer, primary key",
+                "file_path": "String",
+                "file_name": "String",
+                "file_type": "String",
+                "mime_type": "String",
+                "content": "Text, nullable",
+                "metadata": "JSON",
+                "created_at": "DateTime",
+                "updated_at": "DateTime"
+            },
+            "Category": {
+                "id": "Integer, primary key",
+                "name": "String",
+                "description": "String, nullable"
+            },
+            "DocumentVersion": {
+                "id": "Integer, primary key",
+                "document_id": "Integer, foreign key",
+                "version": "Integer",
+                "changes": "JSON",
+                "created_at": "DateTime"
+            },
+            "ChatHistory": {
+                "id": "Integer, primary key",
+                "conversation_id": "String",
+                "role": "String",
+                "content": "Text",
+                "created_at": "DateTime"
+            },
+            "BusinessData": {
+                "id": "Integer, primary key",
+                "data_type": "String",
+                "data": "JSON",
+                "created_at": "DateTime",
+                "updated_at": "DateTime"
+            }
+        }
+        return json.dumps(schema, indent=2)
+    except Exception as e:
+        return f"Error retrieving schema: {str(e)}"
+    finally:
+        db.close()
+
+@mcp.resource("doc://{document_id}")
+async def get_document_content(ctx: Context, document_id: str) -> Dict[str, Any]:
+    """Provide document content as a resource"""
+    db: Session = next(get_db())
+    try:
+        doc = db.query(Document).filter_by(id=int(document_id)).first()
+        if not doc:
+            return f"Document not found: {document_id}"
+        
+        return {
+            "id": doc.id,
+            "file_name": doc.file_name,
+            "file_type": doc.file_type,
+            "content": doc.content,
+            "metadata": doc.metadata
+        }
+    except Exception as e:
+        return f"Error retrieving document: {str(e)}"
+    finally:
+        db.close()
+
+@mcp.resource("stats://business")
+async def get_business_stats(ctx: Context) -> str:
+    """Provide business statistics as a resource"""
+    db: Session = next(get_db())
+    try:
+        doc_count = db.query(Document).count()
+        category_count = db.query(Category).count()
+        chat_count = db.query(ChatHistory).count()
+        
+        # Get counts by document type
+        doc_types = {}
+        for doc_type in db.query(Document.file_type).distinct():
+            count = db.query(Document).filter_by(file_type=doc_type[0]).count()
+            doc_types[doc_type[0]] = count
+        
+        stats = {
+            "total_documents": doc_count,
+            "total_categories": category_count,
+            "total_conversations": chat_count,
+            "documents_by_type": doc_types,
+            "last_update": datetime.utcnow().isoformat()
+        }
+        
+        return json.dumps(stats, indent=2)
+    except Exception as e:
+        return f"Error retrieving business stats: {str(e)}"
+    finally:
+        db.close()
+
+# ===== Prompt implementations =====
+@mcp.prompt()
+async def generate_report(report_type: str, time_period: str = "last_month") -> str:
+    """Create a prompt for generating a business report"""
+    prompt = f"""
+Please generate a comprehensive {report_type} business report for the {time_period}.
+
+Your report should include:
+1. Executive summary
+2. Key metrics and performance indicators
+3. Detailed analysis of the data
+4. Comparison with previous periods
+5. Recommendations for improvement
+
+Please use the available tools to query the necessary data and format the report in a professional manner.
+"""
+    return prompt
+
+@mcp.prompt()
+async def analyze_data(data_type: str, analysis_focus: str) -> str:
+    """Create a prompt for analyzing business data patterns"""
+    prompt = f"""
+Please analyze the {data_type} data with a focus on {analysis_focus}.
+
+Your analysis should:
+1. Identify key patterns and trends
+2. Highlight anomalies or outliers
+3. Provide insights into potential causes
+4. Suggest actions based on the findings
+
+Use the available tools to access the necessary data and perform your analysis.
+"""
+    return prompt
+
+@mcp.prompt()
+async def setup_assistant(business_type: str, focus_areas: List[str]) -> str:
+    """Create a prompt for configuring a business data assistant"""
+    areas = ", ".join(focus_areas)
+    prompt = f"""
+You are a specialized business data assistant for a {business_type} business.
+Your primary focus areas are: {areas}.
+
+Your responsibilities include:
+1. Organizing and categorizing business documents
+2. Answering queries about business data
+3. Generating reports and insights
+4. Providing recommendations based on data analysis
+
+Please use the available tools to access and manage the business data effectively.
+"""
+    return prompt
+
+# ===== Tool implementations =====
 @mcp.tool()
 async def process_business_directory(ctx: Context, directory_path: str) -> Dict[str, Any]:
     """Process a directory containing business files and documents"""
